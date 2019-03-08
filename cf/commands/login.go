@@ -2,6 +2,7 @@ package commands
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	"code.cloudfoundry.org/cli/api/cloudcontroller/ccversion"
@@ -82,6 +83,9 @@ func (cmd *Login) SetDependency(deps commandregistry.Dependency, pluginCall bool
 }
 
 func (cmd *Login) Execute(c flags.FlagContext) error {
+
+	fmt.Println("*** We're executing!")
+
 	cmd.config.ClearSession()
 
 	endpoint, skipSSL := cmd.decideEndpoint(c)
@@ -180,8 +184,11 @@ func (cmd Login) authenticateSSO(c flags.FlagContext) error {
 		if c.IsSet("sso-passcode") && i == 0 {
 			credentials["passcode"] = c.String("sso-passcode")
 		} else {
+			// Gerard & Wenxin magic needs to happen here!
 			credentials["passcode"] = cmd.ui.AskForPassword(passcode.DisplayName)
 		}
+
+		fmt.Println(credentials["passcode"])
 
 		cmd.ui.Say(T("Authenticating..."))
 		err = cmd.authenticator.Authenticate(credentials)

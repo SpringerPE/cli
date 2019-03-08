@@ -64,6 +64,8 @@ type LoginCommand struct {
 }
 
 func (cmd *LoginCommand) Setup(config command.Config, ui command.UI) error {
+	fmt.Println("*** LoginCommand Setup")
+	
 	cmd.ActorMaker = actorMaker
 	actor, err := cmd.ActorMaker.NewActor(config, ui, false)
 	if err != nil {
@@ -76,9 +78,14 @@ func (cmd *LoginCommand) Setup(config command.Config, ui command.UI) error {
 }
 
 func (cmd *LoginCommand) Execute(args []string) error {
+	fmt.Println("*** LoginCommand Execute - step 1")
+
 	if !cmd.Config.ExperimentalLogin() {
+		fmt.Println("*** LoginCommand Execute - non experimental")
 		return translatableerror.UnrefactoredCommandError{}
 	}
+
+	fmt.Println("*** LoginCommand Execute - step 2")
 	cmd.UI.DisplayWarning("Using experimental login command, some behavior may be different")
 
 	if cmd.APIEndpoint != "" {
@@ -133,6 +140,8 @@ func (cmd *LoginCommand) Execute(args []string) error {
 }
 
 func (cmd *LoginCommand) authenticate() error {
+	fmt.Println("*** LoginCommand authenticate")
+
 	prompts := cmd.Actor.GetLoginPrompts()
 	credentials := make(map[string]string)
 
@@ -182,6 +191,8 @@ func (cmd *LoginCommand) authenticate() error {
 }
 
 func (cmd *LoginCommand) passwordPrompts(prompts map[string]coreconfig.AuthPrompt, credentials map[string]string, passwordKeys []string) error {
+	fmt.Println("*** LoginCommand passwordPrompts")
+	
 	// ensure that password gets prompted before other codes (eg. mfa code)
 	if passPrompt, ok := prompts["password"]; ok {
 		if cmd.Password != "" {
@@ -208,6 +219,8 @@ func (cmd *LoginCommand) passwordPrompts(prompts map[string]coreconfig.AuthPromp
 }
 
 func (cmd *LoginCommand) showStatus() {
+	fmt.Println("*** LoginCommand showStatus")
+
 	tableContent := [][]string{
 		{
 			cmd.UI.TranslateText("API endpoint:"),
