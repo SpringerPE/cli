@@ -111,8 +111,6 @@ func Main(traceEnv string, args []string) {
 			os.Exit(1)
 		}
 
-		fmt.Println("*** cmd !!")
-
 		for _, req := range reqs {
 			err = req.Execute()
 			if err != nil {
@@ -121,11 +119,7 @@ func Main(traceEnv string, args []string) {
 			}
 		}
 
-		fmt.Println("*** cmd step 2")
-
 		err = cmd.Execute(flagContext)
-
-		fmt.Println("*** cmd step 3")
 
 		if err != nil {
 			deps.UI.Failed(err.Error())

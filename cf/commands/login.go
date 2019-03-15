@@ -1,16 +1,18 @@
 package commands
 
 import (
-	"errors"
-	"fmt"
-	"strconv"
-
 	"code.cloudfoundry.org/cli/api/cloudcontroller/ccversion"
 	"code.cloudfoundry.org/cli/cf/commandregistry"
 	"code.cloudfoundry.org/cli/cf/flags"
 	. "code.cloudfoundry.org/cli/cf/i18n"
 	"code.cloudfoundry.org/cli/command"
 	"code.cloudfoundry.org/cli/command/translatableerror"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"strconv"
 
 	"code.cloudfoundry.org/cli/cf/api/authentication"
 	"code.cloudfoundry.org/cli/cf/api/organizations"
@@ -19,6 +21,8 @@ import (
 	"code.cloudfoundry.org/cli/cf/models"
 	"code.cloudfoundry.org/cli/cf/requirements"
 	"code.cloudfoundry.org/cli/cf/terminal"
+
+	"github.com/skratchdot/open-golang/open"
 )
 
 const maxLoginTries = 3
@@ -83,9 +87,6 @@ func (cmd *Login) SetDependency(deps commandregistry.Dependency, pluginCall bool
 }
 
 func (cmd *Login) Execute(c flags.FlagContext) error {
-
-	fmt.Println("*** We're executing!")
-
 	cmd.config.ClearSession()
 
 	endpoint, skipSSL := cmd.decideEndpoint(c)
@@ -185,7 +186,8 @@ func (cmd Login) authenticateSSO(c flags.FlagContext) error {
 			credentials["passcode"] = c.String("sso-passcode")
 		} else {
 			// Gerard & Wenxin magic needs to happen here!
-			credentials["passcode"] = cmd.ui.AskForPassword(passcode.DisplayName)
+			//credentials["passcode"] = cmd.ui.AskForPassword(passcode.DisplayName)
+			credentials["passcode"], _ = getPasscode(cmd.config.AuthenticationEndpoint(), passcode.DisplayName)
 		}
 
 		fmt.Println(credentials["passcode"])
@@ -419,4 +421,107 @@ func (cmd Login) promptForName(names []string, listPrompt, itemPrompt string) st
 	}
 
 	return names[nameIndex-1]
+}
+
+
+
+
+
+func getPasscode(authUri string, userMsg string) (string, error) {
+	var passcode string
+
+	stdinChannel := make(chan string)
+	tokenChannel := make(chan string)
+	errorChannel := make(chan error)
+	portChannel := make(chan string)
+
+	go listenForTokenCallback(tokenChannel, errorChannel, portChannel, authUri)
+
+	port := <-portChannel
+	fmt.Println(port)
+
+	redirectUri, err := url.Parse("http://127.0.0.1:" + port + "/passcode/callback")
+	//redirectUri, err := url.Parse("http://127.0.0.1:" + "8111" + "/passcode/callback")
+	if err != nil {
+		panic(err)
+	}
+
+	openURL := fmt.Sprintf("%s/passcode?redirect_uri=%s", authUri, redirectUri.String())
+
+	fmt.Println(userMsg)
+	fmt.Println("")
+
+
+	// try to open the browser window, but don't get all hung up if it
+	// fails, since we already printed about it.
+	open.Start(openURL)
+
+	go waitForTokenInput(stdinChannel, errorChannel)
+
+	select {
+	case tokenStrMsg := <-tokenChannel:
+		passcode = tokenStrMsg
+	case tokenStrMsg := <-stdinChannel:
+		passcode = tokenStrMsg
+	case errorMsg := <-errorChannel:
+		return "", errorMsg
+	}
+
+	return passcode, nil
+}
+
+func listenForTokenCallback(tokenChannel chan string, errorChannel chan error, portChannel chan string, authUrl string) {
+	s := &http.Server{
+		Addr: "127.0.0.1:0",
+		//Addr: "127.0.0.1:8111",
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenChannel <- r.FormValue("code")
+			http.Redirect(w, r, fmt.Sprintf("%s/passcode_success", authUrl), http.StatusTemporaryRedirect)
+		}),
+	}
+
+	err := listenAndServeWithPort(s, portChannel)
+
+	if err != nil {
+		errorChannel <- err
+	}
+}
+
+func listenAndServeWithPort(srv *http.Server, portChannel chan string) error {
+	addr := srv.Addr
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return err
+	}
+
+	portChannel <- port
+
+	return srv.Serve(tcpKeepAliveListener{ln.(*net.TCPListener)})
+}
+
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+}
+
+func waitForTokenInput(tokenChannel chan string, errorChannel chan error) {
+	for {
+		fmt.Printf("or enter passcode manually: ")
+
+		// Probably add the Scanf in a separate goroutine
+		//https://stackoverflow.com/questions/50797563/how-to-cancel-fmt-scanf-after-a-certain-timeout
+		var passcode string
+		_, err := fmt.Scanf("%s", &passcode)
+		if err != nil {
+			errorChannel <- err
+			return
+		}
+
+		tokenChannel <- passcode
+		break
+	}
 }
